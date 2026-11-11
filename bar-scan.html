@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>Bar Scan</title>
+<style>
+:root{--bg:#0f1115;--card:#181b22;--line:#2a2f3a;--txt:#eef1f6;--mut:#9aa3b2;--acc:#4ea1ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:640px;margin:0 auto;padding:14px 14px 48px;display:grid;gap:12px}
+h1{font-size:20px;margin:4px 0 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
+button,select,input{font:inherit;color:var(--txt)}
+button{background:#232834;border:1px solid var(--line);border-radius:10px;padding:9px 12px;cursor:pointer}
+button.pri{background:var(--acc);color:#06121f;border-color:var(--acc);font-weight:600}
+button:disabled{opacity:.45}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.stage{position:relative;background:#000;border-radius:12px;overflow:hidden;min-height:180px}
+canvas#view{display:block;width:100%;height:auto;touch-action:none}
+#off{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;color:var(--mut)}
+.hint{color:var(--mut);font-size:13px;margin:8px 2px 0}
+.total{font-size:56px;font-weight:700;line-height:1}
+.total small{font-size:20px;color:var(--mut);margin-left:6px;font-weight:500}
+.sub{color:var(--mut);margin:6px 0 10px;min-height:1.4em}
+.chips{display:flex;gap:6px;flex-wrap:wrap;min-height:36px}
+.chip{padding:7px 12px;border-radius:999px;font-weight:700;border:2px solid rgba(255,255,255,.25)}
+.adds{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.adds button{padding:6px 10px;font-size:14px}
+label.f{display:grid;gap:4px;font-size:13px;color:var(--mut)}
+input[type=number],select{background:#10131a;border:1px solid var(--line);border-radius:8px;padding:8px;width:100%}
+input[type=range]{width:100%}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+details summary{cursor:pointer;font-weight:600}
+.prow{display:grid;grid-template-columns:auto 44px 1fr 1fr auto auto;gap:8px;align-items:center;margin:8px 0}
+.prow input[type=color]{width:44px;height:36px;padding:0;border:1px solid var(--line);border-radius:8px;background:none}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{border:0;border-radius:0;background:#10131a}
+.seg button.on{background:var(--acc);color:#06121f;font-weight:600}
+.pick{background:#3a2d00;border-color:#caa100}
+</style>
+</head>
+<body>
+<main>
+  <h1>Bar Scan</h1>
+
+  <section class="card">
+    <div class="stage">
+      <canvas id="view" width="640" height="480"></canvas>
+      <div id="off"><div><div style="font-size:15px;margin-bottom:10px">Camera is off</div><button class="pri" id="start">Start camera</button><div class="hint" id="err"></div></div></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="freeze" disabled>Freeze</button>
+      <label class="row" style="gap:6px"><span class="pri" style="display:none"></span>
+        <button id="photoBtn" type="button">Use a photo</button>
+        <input id="photo" type="file" accept="image/*" capture="environment" hidden>
+      </label>
+      <div class="seg" title="Direction the bar runs in the picture">
+        <button id="oH" class="on">Bar ↔</button><button id="oV">Bar ↕</button>
+      </div>
+    </div>
+    <p class="hint" id="hint">Look along the sleeve from the side so the plates show as coloured stripes. Drag on the picture to put the scan line along the middle of the plates (the bar’s centre line).</p>
+  </section>
+
+  <section class="card">
+    <div class="total"><span id="total">–</span><small id="ulbl">kg</small></div>
+    <div class="sub" id="sub">Point the camera at the plates</div>
+    <div class="chips" id="chips"></div>
+    <div class="adds" id="adds"></div>
+    <div class="row" style="margin-top:10px"><button id="reset" hidden>Back to scan</button></div>
+    <p class="hint">Assumes both sides are loaded the same. Tap a plate chip to remove a wrong one; tap “+” to add a missed one.</p>
+  </section>
+
+  <section class="card">
+    <details open>
+      <summary>Bar &amp; units</summary>
+      <div class="row" style="margin:10px 0">
+        <div class="seg"><button id="uKg" class="on">kg</button><button id="uLb">lb</button></div>
+      </div>
+      <div class="grid">
+        <label class="f">Bar weight<input id="bar" type="number" step="any" min="0"></label>
+        <label class="f">Collars (each)<input id="collar" type="number" step="any" min="0"></label>
+      </div>
+    </details>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>Plate colours</summary>
+      <p class="hint">Gym colours vary. Use ⌖ then tap a plate in the picture to teach the app that plate’s colour. Untick any colour that confuses the scan. Plates of the same colour (e.g. two black sizes) are told apart by height, so fill in the Ø column (plate diameter in mm, or any consistent size units) for them. Keep the scan line on the bar’s centre line.</p>
+      <div id="pal"></div>
+      <div class="row"><button id="addRow">Add plate</button><button id="presetBtn">Reset colours</button></div>
+    </details>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>Scan tuning</summary>
+      <label class="f" style="margin:10px 0">Colour tolerance<input id="sens" type="range" min="10" max="60"></label>
+      <label class="f">Scan line thickness<input id="thick" type="range" min="3" max="30"></label>
+    </details>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const KEY = "barscan.v2";
+const PRESETS = {
+  kg: [
+    {w:25,hex:"#d32f2f",on:true,d:450},{w:20,hex:"#1e5bd6",on:true,d:450},{w:15,hex:"#f2c200",on:true,d:450},
+    {w:10,hex:"#1f9d4a",on:true,d:450},{w:5,hex:"#bfc3c8",on:true,d:0},
+    {w:2.5,hex:"#1a1a1a",on:true,d:200},{w:1.25,hex:"#1a1a1a",on:true,d:160}
+  ],
+  lb: [
+    {w:55,hex:"#d32f2f",on:true},{w:45,hex:"#1e5bd6",on:true},{w:35,hex:"#f2c200",on:true},
+    {w:25,hex:"#1f9d4a",on:true},{w:10,hex:"#f2f2f2",on:true},{w:5,hex:"#8a8a8a",on:false}
+  ]
+};
+const clone = o => JSON.parse(JSON.stringify(o));
+const S = {
+  unit:"kg", bar:{kg:20,lb:45}, collars:0, vertical:false, bandPos:.5, thick:10, sens:30,
+  pal:{kg:clone(PRESETS.kg), lb:clone(PRESETS.lb)},
+  live:false, hasFrame:false, manual:null, picking:null, hist:[], lastRuns:[], detected:[], steady:false
+};
+try{
+  const j = JSON.parse(localStorage.getItem(KEY)||"null");
+  if(j){ for(const k of ["unit","bar","collars","vertical","bandPos","thick","sens","pal"]) if(j[k]!==undefined) S[k]=j[k]; }
+}catch(e){}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({unit:S.unit,bar:S.bar,collars:S.collars,vertical:S.vertical,bandPos:S.bandPos,thick:S.thick,sens:S.sens,pal:S.pal})); }catch(e){} }
+const pal = () => S.pal[S.unit];
+const fmt = n => String(Number((+n).toFixed(2)));
+
+/* ---------- colour maths ---------- */
+function hex2rgb(h){ const n=parseInt(h.slice(1),16); return [n>>16&255,n>>8&255,n&255]; }
+function rgb2hex(r,g,b){ return "#"+[r,g,b].map(v=>Math.round(v).toString(16).padStart(2,"0")).join(""); }
+function rgb2lab(r,g,b){
+  const f=c=>{c/=255;return c>.04045?Math.pow((c+.055)/1.055,2.4):c/12.92};
+  const R=f(r),G=f(g),B=f(b);
+  let x=(R*.4124+G*.3576+B*.1805)/.95047, y=R*.2126+G*.7152+B*.0722, z=(R*.0193+G*.1192+B*.9505)/1.08883;
+  const t=v=>v>.008856?Math.cbrt(v):7.787*v+16/116;
+  x=t(x);y=t(y);z=t(z);
+  return [116*y-16,500*(x-y),200*(y-z)];
+}
+const dist=(a,b)=>Math.hypot(.5*(a[0]-b[0]),a[1]-b[1],a[2]-b[2]);
+const textOn = hex => { const [r,g,b]=hex2rgb(hex); return (r*.299+g*.587+b*.114)>150?"#111":"#fff"; };
+
+/* ---------- frame source ---------- */
+const view = $("view"), vctx = view.getContext("2d");
+const raw = document.createElement("canvas"), rctx = raw.getContext("2d",{willReadFrequently:true});
+const video = document.createElement("video"); video.playsInline=true; video.muted=true;
+let stream=null, lastT=0;
+
+function sizeTo(w,h,max){
+  const s=Math.min(1,max/Math.max(w,h)); const W=Math.round(w*s),H=Math.round(h*s);
+  if(raw.width!==W||raw.height!==H){ raw.width=W; raw.height=H; view.width=W; view.height=H; }
+}
+
+async function startCam(){
+  $("err").textContent="";
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    $("err").textContent="Camera access needs HTTPS (e.g. GitHub Pages). You can still use “Use a photo”."; return;
+  }
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280}},audio:false});
+    video.srcObject=stream; await video.play();
+    S.live=true; S.hist=[]; S.manual=null; $("off").hidden=true; $("freeze").disabled=false; $("freeze").textContent="Freeze";
+    requestAnimationFrame(loop);
+  }catch(e){
+    $("err").textContent="Couldn’t open the camera ("+(e.name||"error")+"). Check permissions, or use “Use a photo”.";
+  }
+}
+function loop(t){
+  if(!S.live) return;
+  requestAnimationFrame(loop);
+  if(t-lastT<90) return; lastT=t;
+  if(!video.videoWidth) return;
+  sizeTo(video.videoWidth,video.videoHeight,640);
+  rctx.drawImage(video,0,0,raw.width,raw.height);
+  S.hasFrame=true; process();
+}
+function process(){ analyse(); render(); updateResults(); }
+
+/* ---------- analysis ---------- */
+function analyse(){
+  const act=pal().filter(p=>p.on&&p.w>0).map(p=>({w:p.w,hex:p.hex,d:+p.d||0,lab:rgb2lab(...hex2rgb(p.hex))}));
+  // greys/blacks differ from backgrounds mainly in brightness, so match them more strictly on lightness
+  act.forEach(p=>{ p.ach=Math.hypot(p.lab[1],p.lab[2])<15; });
+  const dEntry=(lab,p)=>p.ach?2*Math.hypot(lab[0]-p.lab[0],1.5*(lab[1]-p.lab[1]),1.5*(lab[2]-p.lab[2])):dist(lab,p.lab);
+  // plates of (nearly) the same colour form a group, told apart later by size
+  act.forEach((p,i)=>{ p.g=i; for(let j=0;j<i;j++){ if(act[j].g===j&&dist(p.lab,act[j].lab)<12){p.g=j;break;} } });
+  const W=raw.width,H=raw.height,vert=S.vertical;
+  const len=vert?H:W, cross=vert?W:H;
+  const c0=Math.round(S.bandPos*cross), half=Math.max(1,Math.round(S.thick/100*cross/2));
+  const a=Math.max(0,c0-half), b=Math.min(cross,c0+half), th=Math.max(1,b-a);
+  const img=vert?rctx.getImageData(a,0,th,H):rctx.getImageData(0,a,W,th);
+  const d=img.data, iw=img.width;
+  const labels=new Int16Array(len), Ls=new Float32Array(len);
+  for(let i=0;i<len;i++){
+    let r=0,g=0,bl=0;
+    for(let t=0;t<th;t++){ const k=(vert?(i*iw+t):(t*iw+i))*4; r+=d[k];g+=d[k+1];bl+=d[k+2]; }
+    r/=th;g/=th;bl/=th;
+    const lab=rgb2lab(r,g,bl); Ls[i]=lab[0];
+    let best=-1,bd=S.sens;
+    for(let j=0;j<act.length;j++){ if(act[j].g!==j) continue; const dd=dEntry(lab,act[j]); if(dd<bd){bd=dd;best=j;} }
+    labels[i]=best;
+  }
+  const sm=modeFilter(labels,5);
+  const minRun=Math.max(3,Math.round(len*.012));
+  let runs=[]; let i=0;
+  while(i<len){
+    const lab=sm[i]; let j=i; while(j<len&&sm[j]===lab) j++;
+    if(lab>=0){
+      const seg=Array.from(Ls.subarray(i,j)).sort((x,y)=>x-y), med=seg[seg.length>>1];
+      let s=i;
+      for(let k=i;k<=j;k++){
+        const seam = k===j || Ls[k]<med*.8;
+        if(seam){ if(k-s>=minRun) runs.push({s:s,e:k,g:lab}); s=k+1; }
+      }
+    }
+    i=j;
+  }
+
+  /* size: how far the plate's colour extends across the bar, measured from the scan line */
+  const mem=g=>act.filter(p=>p.g===g);
+  let full=null; const getFull=()=>full||(full=rctx.getImageData(0,0,W,H).data);
+  const median=arr=>{const t=arr.slice().sort((x,y)=>x-y);return t[t.length>>1];};
+  const extentAt=(pos,e0)=>{
+    const D=getFull();
+    const at=cr=>{ let r=0,g=0,bb=0; for(let o=-2;o<=2;o++){ const q=Math.min(len-1,Math.max(0,pos+o)); const x=vert?cr:q, y=vert?q:cr; const k=(y*W+x)*4; r+=D[k];g+=D[k+1];bb+=D[k+2]; } return dEntry(rgb2lab(r/5,g/5,bb/5),e0)<S.sens*1.3; };
+    if(!at(c0)) return 0;
+    let up=c0,dn=c0; while(up>0&&at(up-1))up--; while(dn<cross-1&&at(dn+1))dn++;
+    return dn-up+1;
+  };
+  const out=[];
+  for(const r of runs){
+    const lab0=act[r.g];
+    if(mem(r.g).length>1){
+      // same-colour group: split the run wherever the plate's height changes
+      const segs=[]; let seg=null;
+      for(let q=r.s;q<r.e;q+=2){
+        const e=extentAt(q,lab0);
+        if(seg&&e>0&&seg.ref>0&&Math.abs(e-seg.ref)/seg.ref<.15){ seg.e=Math.min(r.e,q+2); seg.exts.push(e); seg.ref=seg.exts.reduce((x,y)=>x+y,0)/seg.exts.length; }
+        else { if(seg) segs.push(seg); seg={s:q,e:Math.min(r.e,q+2),exts:[e],ref:e}; }
+      }
+      if(seg) segs.push(seg);
+      const good=segs.filter(x=>x.e-x.s>=minRun);
+      if(good.length) good.forEach(x=>out.push({s:x.s,e:x.e,g:r.g,ext:median(x.exts)}));
+      else out.push({s:r.s,e:r.e,g:r.g,ext:median(segs.flatMap(x=>x.exts))});
+    } else {
+      out.push({s:r.s,e:r.e,g:r.g,ext:extentAt(Math.round((r.s+r.e)/2),lab0)});
+    }
+  }
+  // drop very thin things (the bar sleeve itself) that happen to match a plate colour
+  runs=out.filter(r=>!(r.ext>0&&r.ext<.12*cross));
+
+  const sc=runs.filter(r=>mem(r.g).length===1&&act[r.g].d>0&&r.ext>0).map(r=>r.ext/act[r.g].d);
+  const scale=sc.length?median(sc):0;   // pixels per mm, from plates whose colour is unique
+  const pend={};
+  for(const r of runs){
+    const m=mem(r.g); r.w=m[0].w; r.hex=m[0].hex; r.unsure=false;
+    if(m.length>1){
+      const ms=m.filter(p=>p.d>0).sort((x,y)=>y.d-x.d);
+      if(ms.length>1&&r.ext>0&&scale){
+        let best=ms[0],bs=1e9;
+        for(const p of ms){ const e=Math.abs(Math.log(r.ext/(scale*p.d))); if(e<bs){bs=e;best=p;} }
+        r.w=best.w; r.hex=best.hex; r.unsure=bs>.25;
+      } else { (pend[r.g]=pend[r.g]||[]).push(r); r.unsure=true; }
+    }
+  }
+  // no reference plate in view: with two sizes of the same colour, bigger one = bigger plate
+  for(const g in pend){
+    const rs=pend[g], ms=mem(+g).filter(p=>p.d>0).sort((x,y)=>y.d-x.d);
+    const exts=rs.map(r=>r.ext).filter(e=>e>0);
+    if(ms.length===2&&exts.length){
+      const mn=Math.min(...exts), mx=Math.max(...exts);
+      if(mx/mn>1.12){ const cut=Math.sqrt(mn*mx); rs.forEach(r=>{ const p=r.ext>=cut?ms[0]:ms[1]; r.w=p.w;r.hex=p.hex;r.unsure=false; }); }
+    }
+  }
+  S.lastRuns=runs; S.detected=runs.map(r=>r.w); S.unsure=runs.some(r=>r.unsure);
+  const sig=S.detected.join(",");
+  S.hist.push(sig); if(S.hist.length>8) S.hist.shift();
+  const cnt={}; S.hist.forEach(s=>cnt[s]=(cnt[s]||0)+1);
+  let mode=sig,mc=0; for(const k in cnt) if(cnt[k]>mc){mc=cnt[k];mode=k;}
+  S.stable = mode?mode.split(",").map(Number):[];
+  S.steady = mc>=Math.min(5,S.hist.length) && S.hist.length>=(S.live?5:1);
+  S.band={a,b,len,vert};
+}
+function modeFilter(arr,k){
+  const n=arr.length,out=new Int16Array(n),r=k>>1,cnt=new Map();
+  for(let i=0;i<n;i++){
+    cnt.clear(); let best=-2,bc=0;
+    for(let j=Math.max(0,i-r);j<=Math.min(n-1,i+r);j++){ const v=arr[j],c=(cnt.get(v)||0)+1; cnt.set(v,c); if(c>bc){bc=c;best=v;} }
+    out[i]=best;
+  }
+  return out;
+}
+
+/* ---------- drawing ---------- */
+function render(){
+  if(!S.hasFrame) return;
+  vctx.drawImage(raw,0,0);
+  const bd=S.band; if(!bd) return;
+  const fs=Math.max(12,Math.round(raw.width/32));
+  vctx.lineWidth=2; vctx.strokeStyle="rgba(255,255,255,.9)"; vctx.setLineDash([8,6]);
+  if(bd.vert) vctx.strokeRect(bd.a,0,bd.b-bd.a,raw.height); else vctx.strokeRect(0,bd.a,raw.width,bd.b-bd.a);
+  vctx.setLineDash([]); vctx.font="700 "+fs+"px system-ui"; vctx.textAlign="center"; vctx.textBaseline="middle";
+  for(const r of S.lastRuns){
+    const mid=(r.s+r.e)/2;
+    vctx.fillStyle=r.hex; vctx.globalAlpha=.55;
+    if(bd.vert) vctx.fillRect(bd.a,r.s,bd.b-bd.a,r.e-r.s); else vctx.fillRect(r.s,bd.a,r.e-r.s,bd.b-bd.a);
+    vctx.globalAlpha=1;
+    const x=bd.vert?bd.b+fs:mid, y=bd.vert?mid:bd.b+fs;
+    const tx=fmt(r.w)+(r.unsure?"?":""), tw=vctx.measureText(tx).width+10;
+    vctx.fillStyle="rgba(0,0,0,.75)"; vctx.fillRect(x-tw/2,y-fs*.7,tw,fs*1.4);
+    vctx.fillStyle="#fff"; vctx.fillText(tx,x,y);
+  }
+}
+
+/* ---------- results ---------- */
+let lastShown="";
+function current(){ return S.manual || S.stable || []; }
+function updateResults(force){
+  const list=current();
+  const key=list.join(",")+"|"+S.manual+"|"+S.steady+"|"+S.unsure+"|"+S.unit+S.bar[S.unit]+S.collars+"|"+S.live+S.hasFrame;
+  if(key===lastShown&&!force) return; lastShown=key;
+  const side=list.reduce((a,b)=>a+b,0);
+  const total=(+S.bar[S.unit]||0)+2*(+S.collars||0)+2*side;
+  $("total").textContent=S.hasFrame?fmt(total):"–"; $("ulbl").textContent=S.unit;
+  $("sub").textContent = !S.hasFrame ? "Point the camera at the plates"
+    : S.manual ? "Edited by hand · "+fmt(side)+" "+S.unit+" per side"
+    : list.length===0 ? "No plates found — move the scan line or check colours"
+    : (S.steady?"":"Settling… ")+fmt(side)+" "+S.unit+" per side"+(S.unsure?" · a “?” plate is a size guess, tap to fix":"");
+  const chips=$("chips"); chips.innerHTML="";
+  list.forEach((w,i)=>{
+    const p=pal().find(p=>p.w===w); const hex=p?p.hex:"#888";
+    const b=document.createElement("button"); b.className="chip"; b.textContent=fmt(w);
+    b.style.background=hex; b.style.color=textOn(hex); b.title="Tap to remove";
+    b.onclick=()=>{ const l=current().slice(); l.splice(i,1); S.manual=l; updateResults(true); };
+    chips.appendChild(b);
+  });
+  $("reset").hidden=!S.manual;
+}
+function buildAdds(){
+  const box=$("adds"); box.innerHTML="";
+  pal().filter(p=>p.w>0).forEach(p=>{
+    const b=document.createElement("button"); b.textContent="+"+fmt(p.w);
+    b.style.borderColor=p.hex; b.onclick=()=>{ S.manual=current().concat(p.w); updateResults(true); };
+    box.appendChild(b);
+  });
+}
+
+/* ---------- palette editor ---------- */
+function buildPalette(){
+  const box=$("pal"); box.innerHTML="";
+  pal().forEach((p,i)=>{
+    const row=document.createElement("div"); row.className="prow";
+    const on=document.createElement("input"); on.type="checkbox"; on.checked=p.on;
+    on.onchange=()=>{p.on=on.checked;save();S.hist=[];};
+    const col=document.createElement("input"); col.type="color"; col.value=p.hex;
+    col.oninput=()=>{p.hex=col.value;save();};
+    const w=document.createElement("input"); w.type="number"; w.step="any"; w.min="0"; w.value=p.w;
+    w.onchange=()=>{p.w=+w.value||0;save();buildAdds();S.hist=[];};
+    const dd=document.createElement("input"); dd.type="number"; dd.step="any"; dd.min="0"; dd.value=p.d||""; dd.placeholder="Ø mm"; dd.title="Plate diameter (mm) — used to tell same-coloured plates apart by size";
+    dd.onchange=()=>{p.d=+dd.value||0;save();S.hist=[];};
+    const pick=document.createElement("button"); pick.textContent="⌖"; pick.title="Pick colour from picture";
+    if(S.picking===i) pick.className="pick";
+    pick.onclick=()=>{
+      if(!S.hasFrame){ $("hint").textContent="Start the camera (or load a photo) first, then use ⌖."; return; }
+      S.picking=(S.picking===i?null:i); setHint(); buildPalette();
+    };
+    const del=document.createElement("button"); del.textContent="✕";
+    del.onclick=()=>{ pal().splice(i,1); save(); buildPalette(); buildAdds(); S.hist=[]; };
+    row.append(on,col,w,dd,pick,del); box.appendChild(row);
+  });
+}
+function setHint(){
+  $("hint").textContent = S.picking!==null
+    ? "Tap the plate in the picture whose colour you want to use for "+fmt(pal()[S.picking].w)+" "+S.unit+"."
+    : "Look along the sleeve from the side so the plates show as coloured stripes. Drag on the picture to put the scan line along the middle of the plates (the bar’s centre line).";
+}
+
+/* ---------- interaction ---------- */
+function pt(e){ const r=view.getBoundingClientRect(); return [Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),Math.min(1,Math.max(0,(e.clientY-r.top)/r.height))]; }
+let dragging=false;
+view.addEventListener("pointerdown",e=>{
+  if(!S.hasFrame) return;
+  const [fx,fy]=pt(e);
+  if(S.picking!==null){
+    const px=Math.round(fx*(raw.width-1)),py=Math.round(fy*(raw.height-1));
+    const x0=Math.max(0,px-2),y0=Math.max(0,py-2),w=Math.min(5,raw.width-x0),h=Math.min(5,raw.height-y0);
+    const d=rctx.getImageData(x0,y0,w,h).data; let r=0,g=0,b=0,n=w*h;
+    for(let i=0;i<d.length;i+=4){r+=d[i];g+=d[i+1];b+=d[i+2];}
+    pal()[S.picking].hex=rgb2hex(r/n,g/n,b/n); pal()[S.picking].on=true;
+    S.picking=null; save(); setHint(); buildPalette(); buildAdds(); S.hist=[]; if(!S.live) process(); return;
+  }
+  dragging=true; view.setPointerCapture(e.pointerId); moveBand(fx,fy);
+});
+view.addEventListener("pointermove",e=>{ if(dragging){const [fx,fy]=pt(e); moveBand(fx,fy);} });
+view.addEventListener("pointerup",()=>{dragging=false;});
+function moveBand(fx,fy){
+  S.bandPos=Math.min(.95,Math.max(.05,S.vertical?fx:fy)); S.hist=[]; save(); if(!S.live) process();
+}
+
+$("start").onclick=startCam;
+$("freeze").onclick=()=>{
+  if(S.live){ S.live=false; $("freeze").textContent="Resume"; }
+  else if(stream){ S.live=true; S.hist=[]; S.manual=null; $("freeze").textContent="Freeze"; requestAnimationFrame(loop); }
+};
+$("photoBtn").onclick=()=>$("photo").click();
+$("photo").onchange=e=>{
+  const f=e.target.files&&e.target.files[0]; if(!f) return;
+  const img=new Image(); img.onload=()=>{
+    S.live=false; $("freeze").disabled=!stream; $("freeze").textContent="Resume";
+    sizeTo(img.naturalWidth,img.naturalHeight,900); rctx.drawImage(img,0,0,raw.width,raw.height);
+    URL.revokeObjectURL(img.src); $("off").hidden=true; S.hasFrame=true; S.hist=[]; S.manual=null; process();
+  };
+  img.src=URL.createObjectURL(f); e.target.value="";
+};
+function setOrient(v){ S.vertical=v; $("oH").classList.toggle("on",!v); $("oV").classList.toggle("on",v); S.hist=[]; save(); if(S.hasFrame&&!S.live) process(); }
+$("oH").onclick=()=>setOrient(false); $("oV").onclick=()=>setOrient(true);
+$("reset").onclick=()=>{ S.manual=null; updateResults(true); };
+
+function setUnit(u){
+  S.unit=u; $("uKg").classList.toggle("on",u==="kg"); $("uLb").classList.toggle("on",u==="lb");
+  $("bar").value=S.bar[u]; S.manual=null; S.hist=[]; S.picking=null; save(); buildPalette(); buildAdds(); setHint(); updateResults(true);
+}
+$("uKg").onclick=()=>setUnit("kg"); $("uLb").onclick=()=>setUnit("lb");
+$("bar").oninput=e=>{ S.bar[S.unit]=+e.target.value||0; save(); updateResults(true); };
+$("collar").oninput=e=>{ S.collars=+e.target.value||0; save(); updateResults(true); };
+$("sens").oninput=e=>{ S.sens=+e.target.value; save(); S.hist=[]; if(S.hasFrame&&!S.live) process(); };
+$("thick").oninput=e=>{ S.thick=+e.target.value; save(); S.hist=[]; if(S.hasFrame&&!S.live) process(); };
+$("addRow").onclick=()=>{ pal().push({w:0,hex:"#9c27b0",on:true,d:0}); save(); buildPalette(); };
+$("presetBtn").onclick=()=>{ if(confirm("Reset "+S.unit+" colours to the defaults?")){ S.pal[S.unit]=clone(PRESETS[S.unit]); save(); buildPalette(); buildAdds(); S.hist=[]; } };
+
+/* init */
+$("collar").value=S.collars; $("sens").value=S.sens; $("thick").value=S.thick;
+setOrient(S.vertical); setUnit(S.unit); updateResults(true);
+</script>
+</body>
+</html>
